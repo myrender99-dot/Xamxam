@@ -34,7 +34,8 @@ router.post("/seller-applications", async (req, res): Promise<void> => {
     return;
   }
 
-  res.status(201).json(app);
+  const { passwordHash: _ph, ...safeApp } = app;
+  res.status(201).json({ ...safeApp, createdAt: app.createdAt.toISOString() });
 });
 
 router.get("/admin/seller-applications", async (req, res): Promise<void> => {
@@ -47,9 +48,14 @@ router.get("/admin/seller-applications", async (req, res): Promise<void> => {
 
   const filtered = status ? rows.filter((r) => r.status === status) : rows;
 
+  const safeApplications = filtered.map(({ passwordHash: _ph, ...a }) => ({
+    ...a,
+    createdAt: a.createdAt.toISOString(),
+  }));
+
   res.json({
-    applications: filtered,
-    total: filtered.length,
+    applications: safeApplications,
+    total: safeApplications.length,
   });
 });
 
@@ -93,10 +99,8 @@ router.patch("/admin/seller-applications/:id", async (req, res): Promise<void> =
     }
   }
 
-  res.json({
-    ...updated,
-    createdAt: updated.createdAt.toISOString(),
-  });
+  const { passwordHash: _ph, ...safeUpdated } = updated;
+  res.json({ ...safeUpdated, createdAt: updated.createdAt.toISOString() });
 });
 
 router.get("/admin/sellers", async (_req, res): Promise<void> => {
