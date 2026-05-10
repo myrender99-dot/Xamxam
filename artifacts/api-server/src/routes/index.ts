@@ -9,6 +9,7 @@ import adminRouter from "./admin";
 import storageRouter from "./storage";
 import sellerApplicationsRouter from "./seller-applications";
 import sellerAuthRouter from "./seller-auth";
+import paymentsRouter from "./payments";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(adminRouter);
 router.use(storageRouter);
 router.use(sellerApplicationsRouter);
 router.use(sellerAuthRouter);
+router.use(paymentsRouter);
 
 export default router;

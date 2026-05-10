@@ -11,6 +11,8 @@ export const ordersTable = pgTable("orders", {
   status: text("status").notNull().default("pending"),
   paymentMethod: text("payment_method"),
   adminNote: text("admin_note"),
+  diamanopayChargeId: text("diamanopay_charge_id"),
+  diamanopayCheckoutUrl: text("diamanopay_checkout_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
