@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowLeft, ShoppingCart, CreditCard, Loader2 } from "lucide-react";
 import { Link } from "wouter";
-import { useCreateOrder } from "@workspace/api-client-react";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,10 +20,32 @@ type FormData = z.infer<typeof schema>;
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+type Provider = "WAVE" | "ORANGE_MONEY";
+
+const PROVIDERS: { id: Provider; label: string; color: string; bg: string; border: string; activeBorder: string }[] = [
+  {
+    id:           "WAVE",
+    label:        "Wave",
+    color:        "text-blue-700",
+    bg:           "bg-blue-50",
+    border:       "border-blue-200",
+    activeBorder: "border-blue-500 ring-2 ring-blue-200",
+  },
+  {
+    id:           "ORANGE_MONEY",
+    label:        "Orange Money",
+    color:        "text-orange-700",
+    bg:           "bg-orange-50",
+    border:       "border-orange-200",
+    activeBorder: "border-orange-500 ring-2 ring-orange-200",
+  },
+];
+
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const { toast }                   = useToast();
+  const [loading, setLoading]       = useState(false);
+  const [provider, setProvider]     = useState<Provider>("WAVE");
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -42,12 +63,13 @@ export default function Checkout() {
     setLoading(true);
     try {
       const res = await fetch(`${BASE}/api/payments/initiate`.replace("//", "/"), {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName:  data.customerName,
           customerEmail: data.customerEmail,
           customerPhone: data.customerPhone,
+          provider,
           items: items.map((i) => ({ documentId: i.id })),
         }),
       });
@@ -59,21 +81,13 @@ export default function Checkout() {
         return;
       }
 
-      // Sauvegarder la commande localement avant la redirection
       try {
         const saved = JSON.parse(localStorage.getItem("xamxam_orders") ?? "[]");
-        saved.unshift({
-          id: result.orderId,
-          email: data.customerEmail,
-          name: data.customerName,
-          createdAt: new Date().toISOString(),
-        });
+        saved.unshift({ id: result.orderId, email: data.customerEmail, name: data.customerName, createdAt: new Date().toISOString() });
         localStorage.setItem("xamxam_orders", JSON.stringify(saved.slice(0, 10)));
-      } catch {}
+      } catch { /* ignore */ }
 
       clearCart();
-
-      // Rediriger vers la page de paiement DiamanoPay
       window.location.href = result.checkoutUrl;
     } catch {
       toast({ title: "Erreur réseau. Veuillez réessayer.", variant: "destructive" });
@@ -109,7 +123,6 @@ export default function Checkout() {
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <div className="grid md:grid-cols-3 gap-5">
 
-              {/* Colonne gauche */}
               <div className="md:col-span-2 space-y-4">
 
                 {/* Infos client */}
@@ -148,27 +161,44 @@ export default function Checkout() {
                   )} />
                 </div>
 
-                {/* Paiement */}
+                {/* Choix du moyen de paiement */}
                 <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
-                  <h2 className="font-semibold">Paiement sécurisé</h2>
+                  <h2 className="font-semibold">Moyen de paiement</h2>
 
-                  <div className="bg-muted/50 rounded-xl p-4 space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      Vous serez redirigé vers <strong>DiamanoPay</strong> pour finaliser votre paiement en toute sécurité.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { label: "Wave",         emoji: "🌊" },
-                        { label: "Orange Money", emoji: "🟠" },
-                        { label: "Free Money",   emoji: "🟢" },
-                        { label: "Carte bancaire", emoji: "💳" },
-                      ].map((m) => (
-                        <span key={m.label}
-                          className="inline-flex items-center gap-1.5 bg-background border border-border rounded-lg px-3 py-1.5 text-xs font-semibold">
-                          {m.emoji} {m.label}
+                  <div className="grid grid-cols-2 gap-3">
+                    {PROVIDERS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setProvider(p.id)}
+                        className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 transition-all cursor-pointer ${
+                          provider === p.id
+                            ? `${p.activeBorder} ${p.bg}`
+                            : `${p.border} bg-background hover:${p.bg}`
+                        }`}
+                      >
+                        <span className="text-2xl">
+                          {p.id === "WAVE" ? "🌊" : "🟠"}
                         </span>
-                      ))}
-                    </div>
+                        <span className={`font-semibold text-sm ${provider === p.id ? p.color : "text-foreground"}`}>
+                          {p.label}
+                        </span>
+                        {provider === p.id && (
+                          <span className="ml-auto">
+                            <svg className={`w-4 h-4 ${p.color}`} fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-muted/50 rounded-xl p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Vous serez redirigé vers <strong>DiamanoPay</strong> pour finaliser votre paiement{" "}
+                      {provider === "WAVE" ? "Wave" : "Orange Money"} en toute sécurité.
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -181,8 +211,8 @@ export default function Checkout() {
 
                 <Button type="submit" size="lg" className="w-full gap-2 h-13 text-base" disabled={loading}>
                   {loading
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirection en cours…</>
-                    : <><CreditCard className="w-4 h-4" /> Payer {fmt(total)} →</>}
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirection vers DiamanoPay…</>
+                    : <><CreditCard className="w-4 h-4" /> Payer {fmt(total)} via {provider === "WAVE" ? "Wave" : "Orange Money"} →</>}
                 </Button>
               </div>
 

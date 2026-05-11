@@ -11,7 +11,7 @@ Marketplace numérique de documents académiques et contenus digitaux. Les vende
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only, interactive)
 - `pnpm --filter @workspace/db run push-force` — push DB schema changes (non-interactive, for automation)
-- Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET` — HMAC signing secret
+- Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET` — HMAC signing secret, `DIAMANOPAY_CLIENT_ID` + `DIAMANOPAY_CLIENT_SECRET` — DiamanoPay OAuth2 credentials
 
 ## Stack
 

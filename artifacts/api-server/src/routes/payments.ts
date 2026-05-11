@@ -7,32 +7,63 @@ import { sendOrderApprovalEmail } from "../lib/mailer";
 const router: IRouter = Router();
 
 const DIAMANOPAY_API_URL = "https://api.diamanopay.com";
+const DIAMANOPAY_TOKEN_URL = `${DIAMANOPAY_API_URL}/oauth2/token`;
 
-function getApiKey(): string {
-  const key = process.env.DIAMANOPAY_API_KEY;
-  if (!key) throw new Error("DIAMANOPAY_API_KEY environment variable is not set");
-  return key;
+// ─── OAuth2 token cache ────────────────────────────────────────────────────
+let cachedToken: string | null = null;
+let tokenExpiresAt = 0;
+
+async function getAccessToken(): Promise<string> {
+  if (cachedToken && Date.now() < tokenExpiresAt - 60_000) return cachedToken;
+
+  const clientId     = process.env.DIAMANOPAY_CLIENT_ID;
+  const clientSecret = process.env.DIAMANOPAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret)
+    throw new Error("DIAMANOPAY_CLIENT_ID or DIAMANOPAY_CLIENT_SECRET not set");
+
+  const body = new URLSearchParams({
+    grant_type:    "client_credentials",
+    client_id:     clientId,
+    client_secret: clientSecret,
+  });
+
+  const res = await fetch(DIAMANOPAY_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`DiamanoPay OAuth2 failed (${res.status}): ${txt}`);
+  }
+
+  const data = await res.json() as { accessToken: string; accessTokenExpiresAt: string };
+  cachedToken    = data.accessToken;
+  tokenExpiresAt = new Date(data.accessTokenExpiresAt).getTime();
+  return cachedToken;
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
 function getAppBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
   const domains = process.env.REPLIT_DOMAINS ?? "";
-  const first = domains.split(",")[0]?.trim();
+  const first   = domains.split(",")[0]?.trim();
   if (first) return `https://${first}`;
   return "http://localhost:80";
 }
 
-/**
- * POST /payments/initiate
- * Crée une commande et initie une charge DiamanoPay.
- * Retourne l'URL de paiement vers laquelle rediriger l'utilisateur.
- */
+type DpProvider = "WAVE" | "ORANGE_MONEY";
+const VALID_PROVIDERS: DpProvider[] = ["WAVE", "ORANGE_MONEY"];
+
+// ─── POST /payments/initiate ───────────────────────────────────────────────
 router.post("/payments/initiate", async (req: Request, res: Response): Promise<void> => {
-  const { customerName, customerEmail, customerPhone, items } = req.body as {
-    customerName?: string;
+  const { customerName, customerEmail, customerPhone, items, provider } = req.body as {
+    customerName?:  string;
     customerEmail?: string;
     customerPhone?: string;
-    items?: { documentId: number }[];
+    provider?:      string;
+    items?:         { documentId: number }[];
   };
 
   if (!customerName || !customerEmail || !customerPhone || !items?.length) {
@@ -40,8 +71,12 @@ router.post("/payments/initiate", async (req: Request, res: Response): Promise<v
     return;
   }
 
+  const dpProvider: DpProvider = VALID_PROVIDERS.includes((provider ?? "").toUpperCase() as DpProvider)
+    ? (provider!.toUpperCase() as DpProvider)
+    : "WAVE";
+
   const docIds = items.map((i) => i.documentId);
-  const docs = await db
+  const docs   = await db
     .select()
     .from(documentsTable)
     .where(docIds.length === 1 ? eq(documentsTable.id, docIds[0]) : inArray(documentsTable.id, docIds));
@@ -59,62 +94,61 @@ router.post("/payments/initiate", async (req: Request, res: Response): Promise<v
     .returning();
 
   await db.insert(orderItemsTable).values(
-    docs.map((d) => ({ orderId: order.id, documentId: d.id, price: d.price }))
+    docs.map((d) => ({ orderId: order.id, documentId: d.id, price: d.price })),
   );
 
-  const base = getAppBaseUrl();
+  const base       = getAppBaseUrl();
   const successUrl = `${base}/order/${order.id}?email=${encodeURIComponent(customerEmail)}&payment=success`;
   const cancelUrl  = `${base}/order/${order.id}?email=${encodeURIComponent(customerEmail)}&payment=cancelled`;
   const webhookUrl = `${base}/api/payments/webhook`;
 
   let checkoutUrl: string;
-  let chargeId: string;
+  let chargeId:    string;
 
   try {
-    const apiKey = getApiKey();
+    const token = await getAccessToken();
+
     const payload = {
-      amount: totalAmount,
-      currency: "XOF",
-      description: `Commande XamXam #${order.id} (${docs.map(d => d.title).join(", ").slice(0, 100)})`,
-      customer: {
-        name: customerName,
-        email: customerEmail,
-        phone: customerPhone,
-      },
-      metadata: {
-        orderId: order.id,
-        customerEmail,
-      },
+      amount:      totalAmount,
+      currency:    "XOF",
+      description: `Commande XamXam #${order.id} — ${docs.map((d) => d.title).join(", ").slice(0, 120)}`,
+      provider:    dpProvider,
+      customer: { name: customerName, email: customerEmail, phone: customerPhone },
+      metadata:    { orderId: order.id, customerEmail },
       success_url: successUrl,
-      cancel_url: cancelUrl,
+      cancel_url:  cancelUrl,
       webhook_url: webhookUrl,
     };
 
     const dpRes = await fetch(`${DIAMANOPAY_API_URL}/api/charges`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
     });
 
     if (!dpRes.ok) {
       const errorText = await dpRes.text();
       logger.error({ status: dpRes.status, body: errorText }, "DiamanoPay charge creation failed");
-      // Annuler la commande créée
       await db.delete(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
       await db.delete(ordersTable).where(eq(ordersTable.id, order.id));
       res.status(502).json({ error: "Erreur lors de l'initialisation du paiement. Veuillez réessayer." });
       return;
     }
 
-    const dpData = await dpRes.json() as { id?: string; checkout_url?: string; payment_url?: string; url?: string };
-    chargeId = dpData.id ?? "";
-    checkoutUrl = dpData.checkout_url ?? dpData.payment_url ?? dpData.url ?? "";
+    const dpData = await dpRes.json() as {
+      chargeId?: string;
+      id?:       string;
+      paymentUrl?: string;
+      checkout_url?: string;
+      payment_url?:  string;
+      url?:          string;
+    };
+
+    chargeId    = dpData.chargeId ?? dpData.id ?? "";
+    checkoutUrl = dpData.paymentUrl ?? dpData.checkout_url ?? dpData.payment_url ?? dpData.url ?? "";
 
     if (!checkoutUrl) {
-      logger.error({ dpData }, "DiamanoPay response missing checkout URL");
+      logger.error({ dpData }, "DiamanoPay response missing payment URL");
       await db.delete(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
       await db.delete(ordersTable).where(eq(ordersTable.id, order.id));
       res.status(502).json({ error: "Réponse DiamanoPay invalide. Veuillez réessayer." });
@@ -133,37 +167,27 @@ router.post("/payments/initiate", async (req: Request, res: Response): Promise<v
     .set({ diamanopayChargeId: chargeId, diamanopayCheckoutUrl: checkoutUrl })
     .where(eq(ordersTable.id, order.id));
 
-  logger.info({ orderId: order.id, chargeId, totalAmount }, "DiamanoPay charge created");
+  logger.info({ orderId: order.id, chargeId, totalAmount, provider: dpProvider }, "DiamanoPay charge created");
 
-  res.status(201).json({
-    orderId: order.id,
-    checkoutUrl,
-    totalAmount,
-  });
+  res.status(201).json({ orderId: order.id, checkoutUrl, totalAmount });
 });
 
-/**
- * POST /payments/webhook
- * Reçoit les notifications DiamanoPay et met à jour le statut des commandes.
- */
+// ─── POST /payments/webhook ────────────────────────────────────────────────
 router.post("/payments/webhook", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Record<string, unknown>;
 
   logger.info({ body }, "DiamanoPay webhook received");
 
-  // Récupérer l'identifiant de charge et le statut
-  const chargeId  = (body.id ?? body.charge_id ?? body.reference) as string | undefined;
-  const status    = (body.status ?? body.payment_status) as string | undefined;
-  const metadata  = (body.metadata ?? body.meta) as Record<string, unknown> | undefined;
+  const chargeId = (body.chargeId ?? body.id ?? body.charge_id ?? body.reference) as string | undefined;
+  const status   = (body.status ?? body.payment_status) as string | undefined;
+  const metadata = (body.metadata ?? body.meta) as Record<string, unknown> | undefined;
 
-  // Vérification de la signature si DiamanoPay l'envoie
+  // Signature optionnelle
   const signature = req.headers["x-diamanopay-signature"] as string | undefined;
   if (signature && process.env.DIAMANOPAY_WEBHOOK_SECRET) {
     const { createHmac } = await import("crypto");
-    const rawBody = JSON.stringify(body);
-    const expected = createHmac("sha256", process.env.DIAMANOPAY_WEBHOOK_SECRET)
-      .update(rawBody)
-      .digest("hex");
+    const rawBody  = JSON.stringify(body);
+    const expected = createHmac("sha256", process.env.DIAMANOPAY_WEBHOOK_SECRET).update(rawBody).digest("hex");
     if (signature !== expected && `sha256=${expected}` !== signature) {
       logger.warn({ signature }, "Invalid webhook signature");
       res.status(401).json({ error: "Invalid signature" });
@@ -171,7 +195,6 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
     }
   }
 
-  // Répondre 200 immédiatement pour éviter les retries
   res.json({ received: true });
 
   if (!chargeId || !status) {
@@ -179,12 +202,8 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
     return;
   }
 
-  // Chercher la commande par chargeId ou par metadata.orderId
   let order = (await db
-    .select()
-    .from(ordersTable)
-    .where(eq(ordersTable.diamanopayChargeId, chargeId))
-    .limit(1))[0];
+    .select().from(ordersTable).where(eq(ordersTable.diamanopayChargeId, chargeId)).limit(1))[0];
 
   if (!order && metadata?.orderId) {
     const id = parseInt(String(metadata.orderId), 10);
@@ -193,12 +212,9 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
     }
   }
 
-  if (!order) {
-    logger.warn({ chargeId }, "Webhook: no matching order found");
-    return;
-  }
+  if (!order) { logger.warn({ chargeId }, "Webhook: no matching order found"); return; }
 
-  const isSuccess = ["success", "paid", "completed", "succeeded"].includes(status.toLowerCase());
+  const isSuccess = ["success", "paid", "completed", "succeeded", "successful"].includes(status.toLowerCase());
   const isFailed  = ["failed", "cancelled", "canceled", "expired", "rejected"].includes(status.toLowerCase());
 
   if (isSuccess && order.status !== "approved") {
@@ -209,15 +225,14 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
 
     logger.info({ orderId: order.id, chargeId }, "Order approved via webhook");
 
-    // Incrémenter les compteurs et envoyer l'email d'approbation
     const items = await db
       .select({
-        id: orderItemsTable.id,
-        documentId: orderItemsTable.documentId,
-        documentTitle: documentsTable.title,
+        id:              orderItemsTable.id,
+        documentId:      orderItemsTable.documentId,
+        documentTitle:   documentsTable.title,
         documentSubject: documentsTable.subject,
-        documentLevel: documentsTable.level,
-        price: orderItemsTable.price,
+        documentLevel:   documentsTable.level,
+        price:           orderItemsTable.price,
       })
       .from(orderItemsTable)
       .leftJoin(documentsTable, eq(orderItemsTable.documentId, documentsTable.id))
@@ -231,13 +246,11 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
         .set({ downloadCount: sql`${documentsTable.downloadCount} + 1` })
         .where(docIds.length === 1 ? eq(documentsTable.id, docIds[0]) : inArray(documentsTable.id, docIds));
 
-      const allFiles = docIds.length > 0
-        ? await db.select().from(documentFilesTable).where(
-            docIds.length === 1
-              ? eq(documentFilesTable.documentId, docIds[0])
-              : inArray(documentFilesTable.documentId, docIds)
-          )
-        : [];
+      const allFiles = await db.select().from(documentFilesTable).where(
+        docIds.length === 1
+          ? eq(documentFilesTable.documentId, docIds[0])
+          : inArray(documentFilesTable.documentId, docIds),
+      );
 
       const filesByDoc = new Map<number, typeof allFiles>();
       for (const f of allFiles) {
@@ -247,18 +260,18 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
       }
 
       sendOrderApprovalEmail({
-        orderId: order.id,
-        customerName: order.customerName,
+        orderId:       order.id,
+        customerName:  order.customerName,
         customerEmail: order.customerEmail,
-        totalAmount: order.totalAmount,
-        adminNote: null,
+        totalAmount:   order.totalAmount,
+        adminNote:     null,
         items: items.map((item) => ({
-          documentTitle: item.documentTitle ?? "",
+          documentTitle:   item.documentTitle   ?? "",
           documentSubject: item.documentSubject ?? "",
-          documentLevel: item.documentLevel ?? "",
-          price: item.price,
+          documentLevel:   item.documentLevel   ?? "",
+          price:           item.price,
           files: (filesByDoc.get(item.documentId) ?? []).map((f) => ({
-            id: f.id,
+            id:       f.id,
             fileName: f.fileName,
             fileSize: f.fileSize ?? null,
           })),
@@ -275,10 +288,7 @@ router.post("/payments/webhook", async (req: Request, res: Response): Promise<vo
   }
 });
 
-/**
- * GET /payments/verify/:chargeId
- * Vérifie manuellement le statut d'un paiement DiamanoPay (utilisé en retour de paiement).
- */
+// ─── GET /payments/verify/:chargeId ───────────────────────────────────────
 router.get("/payments/verify/:chargeId", async (req: Request, res: Response): Promise<void> => {
   const { chargeId } = req.params;
 
@@ -288,9 +298,9 @@ router.get("/payments/verify/:chargeId", async (req: Request, res: Response): Pr
   }
 
   try {
-    const apiKey = getApiKey();
-    const dpRes = await fetch(`${DIAMANOPAY_API_URL}/api/charges/${chargeId}`, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+    const token  = await getAccessToken();
+    const dpRes  = await fetch(`${DIAMANOPAY_API_URL}/api/charges/${chargeId}`, {
+      headers: { "Authorization": `Bearer ${token}` },
     });
 
     if (!dpRes.ok) {
@@ -298,16 +308,12 @@ router.get("/payments/verify/:chargeId", async (req: Request, res: Response): Pr
       return;
     }
 
-    const data = await dpRes.json() as { id?: string; status?: string; amount?: number; metadata?: Record<string, unknown> };
-
-    // Mettre à jour la commande si le paiement est validé
+    const data   = await dpRes.json() as { chargeId?: string; id?: string; status?: string; amount?: number };
     const status = data.status?.toLowerCase() ?? "";
-    if (["success", "paid", "completed", "succeeded"].includes(status)) {
+
+    if (["success", "paid", "completed", "succeeded", "successful"].includes(status)) {
       const [order] = await db
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.diamanopayChargeId, chargeId))
-        .limit(1);
+        .select().from(ordersTable).where(eq(ordersTable.diamanopayChargeId, chargeId)).limit(1);
 
       if (order && order.status !== "approved") {
         await db
