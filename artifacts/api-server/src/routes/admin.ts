@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, sql, inArray } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, documentsTable, paymentProofsTable, categoriesTable, documentFilesTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, documentsTable, categoriesTable, documentFilesTable } from "@workspace/db";
 import {
   ListAdminOrdersQueryParams,
   GetAdminOrderParams,
@@ -109,26 +109,19 @@ router.get("/admin/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [items, proof] = await Promise.all([
-    db
-      .select({
-        id: orderItemsTable.id,
-        documentId: orderItemsTable.documentId,
-        documentTitle: documentsTable.title,
-        documentSubject: documentsTable.subject,
-        documentLevel: documentsTable.level,
-        price: orderItemsTable.price,
-        fileUrl: documentsTable.fileUrl,
-      })
-      .from(orderItemsTable)
-      .leftJoin(documentsTable, eq(orderItemsTable.documentId, documentsTable.id))
-      .where(eq(orderItemsTable.orderId, order.id)),
-    db
-      .select()
-      .from(paymentProofsTable)
-      .where(eq(paymentProofsTable.orderId, order.id))
-      .limit(1),
-  ]);
+  const items = await db
+    .select({
+      id: orderItemsTable.id,
+      documentId: orderItemsTable.documentId,
+      documentTitle: documentsTable.title,
+      documentSubject: documentsTable.subject,
+      documentLevel: documentsTable.level,
+      price: orderItemsTable.price,
+      fileUrl: documentsTable.fileUrl,
+    })
+    .from(orderItemsTable)
+    .leftJoin(documentsTable, eq(orderItemsTable.documentId, documentsTable.id))
+    .where(eq(orderItemsTable.orderId, order.id));
 
   res.json({
     ...order,
@@ -143,9 +136,6 @@ router.get("/admin/orders/:id", async (req, res): Promise<void> => {
       documentLevel: i.documentLevel ?? "",
       fileUrl: i.fileUrl ?? null,
     })),
-    proofImageData: proof[0]?.proofImageData ?? null,
-    proofNotes: proof[0]?.notes ?? null,
-    proofUploadedAt: proof[0]?.uploadedAt?.toISOString() ?? null,
   });
 });
 

@@ -313,7 +313,7 @@ router.get("/payments/verify/:chargeId", async (req: Request, res: Response): Pr
 
     if (["success", "paid", "completed", "succeeded", "successful"].includes(status)) {
       const [order] = await db
-        .select().from(ordersTable).where(eq(ordersTable.diamanopayChargeId, chargeId)).limit(1);
+        .select().from(ordersTable).where(eq(ordersTable.diamanopayChargeId, chargeId as string)).limit(1);
 
       if (order && order.status !== "approved") {
         await db

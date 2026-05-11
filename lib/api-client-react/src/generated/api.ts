@@ -24,7 +24,6 @@ import type {
   CreateCategoryBody,
   CreateDocumentBody,
   CreateLevelBody,
-  CreateOrderBody,
   Document,
   DocumentFile,
   ErrorResponse,
@@ -47,7 +46,6 @@ import type {
   SellerApplication,
   SellerApplicationBody,
   UpdateDocumentBody,
-  UploadPaymentProofBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -1764,92 +1762,6 @@ export const useDeleteLevel = <
 };
 
 /**
- * @summary Create a new order
- */
-export const getCreateOrderUrl = () => {
-  return `/api/orders`;
-};
-
-export const createOrder = async (
-  createOrderBody: CreateOrderBody,
-  options?: RequestInit,
-): Promise<Order> => {
-  return customFetch<Order>(getCreateOrderUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(createOrderBody),
-  });
-};
-
-export const getCreateOrderMutationOptions = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createOrder>>,
-    TError,
-    { data: BodyType<CreateOrderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createOrder>>,
-  TError,
-  { data: BodyType<CreateOrderBody> },
-  TContext
-> => {
-  const mutationKey = ["createOrder"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createOrder>>,
-    { data: BodyType<CreateOrderBody> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return createOrder(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type CreateOrderMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createOrder>>
->;
-export type CreateOrderMutationBody = BodyType<CreateOrderBody>;
-export type CreateOrderMutationError = ErrorType<ErrorResponse>;
-
-/**
- * @summary Create a new order
- */
-export const useCreateOrder = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createOrder>>,
-    TError,
-    { data: BodyType<CreateOrderBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof createOrder>>,
-  TError,
-  { data: BodyType<CreateOrderBody> },
-  TContext
-> => {
-  return useMutation(getCreateOrderMutationOptions(options));
-};
-
-/**
  * @summary Get an order by ID
  */
 export const getGetOrderUrl = (id: number, params: GetOrderParams) => {
@@ -1948,93 +1860,6 @@ export function useGetOrder<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary Upload payment proof for an order
- */
-export const getUploadPaymentProofUrl = (id: number) => {
-  return `/api/orders/${id}/payment-proof`;
-};
-
-export const uploadPaymentProof = async (
-  id: number,
-  uploadPaymentProofBody: UploadPaymentProofBody,
-  options?: RequestInit,
-): Promise<Order> => {
-  return customFetch<Order>(getUploadPaymentProofUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(uploadPaymentProofBody),
-  });
-};
-
-export const getUploadPaymentProofMutationOptions = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof uploadPaymentProof>>,
-    TError,
-    { id: number; data: BodyType<UploadPaymentProofBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof uploadPaymentProof>>,
-  TError,
-  { id: number; data: BodyType<UploadPaymentProofBody> },
-  TContext
-> => {
-  const mutationKey = ["uploadPaymentProof"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof uploadPaymentProof>>,
-    { id: number; data: BodyType<UploadPaymentProofBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return uploadPaymentProof(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UploadPaymentProofMutationResult = NonNullable<
-  Awaited<ReturnType<typeof uploadPaymentProof>>
->;
-export type UploadPaymentProofMutationBody = BodyType<UploadPaymentProofBody>;
-export type UploadPaymentProofMutationError = ErrorType<ErrorResponse>;
-
-/**
- * @summary Upload payment proof for an order
- */
-export const useUploadPaymentProof = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof uploadPaymentProof>>,
-    TError,
-    { id: number; data: BodyType<UploadPaymentProofBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof uploadPaymentProof>>,
-  TError,
-  { id: number; data: BodyType<UploadPaymentProofBody> },
-  TContext
-> => {
-  return useMutation(getUploadPaymentProofMutationOptions(options));
-};
 
 /**
  * @summary List all orders for admin

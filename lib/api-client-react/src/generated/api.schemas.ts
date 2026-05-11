@@ -174,25 +174,6 @@ export interface OrderWithItems {
   items: OrderItem[];
 }
 
-export type CreateOrderBodyItemsItem = {
-  documentId: number;
-};
-
-export interface CreateOrderBody {
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
-  items: CreateOrderBodyItemsItem[];
-}
-
-export interface UploadPaymentProofBody {
-  customerEmail: string;
-  paymentMethod: string;
-  proofImageData: string;
-  /** @nullable */
-  notes?: string | null;
-}
-
 export interface AdminOrderDetail {
   id: number;
   customerName: string;
@@ -207,12 +188,6 @@ export interface AdminOrderDetail {
   createdAt: string;
   updatedAt: string;
   items: OrderItem[];
-  /** @nullable */
-  proofImageData?: string | null;
-  /** @nullable */
-  proofNotes?: string | null;
-  /** @nullable */
-  proofUploadedAt?: string | null;
 }
 
 export interface ListAdminOrdersResponse {

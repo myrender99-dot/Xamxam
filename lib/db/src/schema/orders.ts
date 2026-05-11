@@ -25,19 +25,9 @@ export const orderItemsTable = pgTable("order_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const paymentProofsTable = pgTable("payment_proofs", {
-  id: serial("id").primaryKey(),
-  orderId: integer("order_id").notNull().unique(),
-  proofImageData: text("proof_image_data").notNull(),
-  notes: text("notes"),
-  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOrderItemSchema = createInsertSchema(orderItemsTable).omit({ id: true, createdAt: true });
-export const insertPaymentProofSchema = createInsertSchema(paymentProofsTable).omit({ id: true, uploadedAt: true });
 
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
 export type OrderItem = typeof orderItemsTable.$inferSelect;
-export type PaymentProof = typeof paymentProofsTable.$inferSelect;

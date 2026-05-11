@@ -355,20 +355,6 @@ export const DeleteLevelParams = zod.object({
 });
 
 /**
- * @summary Create a new order
- */
-export const CreateOrderBody = zod.object({
-  customerName: zod.string(),
-  customerEmail: zod.string(),
-  customerPhone: zod.string(),
-  items: zod.array(
-    zod.object({
-      documentId: zod.number(),
-    }),
-  ),
-});
-
-/**
  * @summary Get an order by ID
  */
 export const GetOrderParams = zod.object({
@@ -401,33 +387,6 @@ export const GetOrderResponse = zod.object({
       fileUrl: zod.string().nullish(),
     }),
   ),
-});
-
-/**
- * @summary Upload payment proof for an order
- */
-export const UploadPaymentProofParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const UploadPaymentProofBody = zod.object({
-  customerEmail: zod.string(),
-  paymentMethod: zod.string(),
-  proofImageData: zod.string(),
-  notes: zod.string().nullish(),
-});
-
-export const UploadPaymentProofResponse = zod.object({
-  id: zod.number(),
-  customerName: zod.string(),
-  customerEmail: zod.string(),
-  customerPhone: zod.string(),
-  totalAmount: zod.number(),
-  status: zod.string(),
-  paymentMethod: zod.string().nullish(),
-  adminNote: zod.string().nullish(),
-  createdAt: zod.string(),
-  updatedAt: zod.string(),
 });
 
 /**
@@ -491,9 +450,6 @@ export const GetAdminOrderResponse = zod.object({
       fileUrl: zod.string().nullish(),
     }),
   ),
-  proofImageData: zod.string().nullish(),
-  proofNotes: zod.string().nullish(),
-  proofUploadedAt: zod.string().nullish(),
 });
 
 /**

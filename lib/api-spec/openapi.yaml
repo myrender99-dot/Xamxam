@@ -416,31 +416,6 @@ paths:
         "204":
           description: Deleted
 
-  /orders:
-    post:
-      operationId: createOrder
-      tags: [orders]
-      summary: Create a new order
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateOrderBody"
-      responses:
-        "201":
-          description: Created order
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Order"
-        "400":
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
   /orders/{id}:
     get:
       operationId: getOrder
@@ -464,37 +439,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderWithItems"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /orders/{id}/payment-proof:
-    post:
-      operationId: uploadPaymentProof
-      tags: [orders]
-      summary: Upload payment proof for an order
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UploadPaymentProofBody"
-      responses:
-        "200":
-          description: Payment proof submitted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Order"
         "404":
           description: Not found
           content:
@@ -926,46 +870,6 @@ components:
         - updatedAt
         - items
 
-    CreateOrderBody:
-      type: object
-      properties:
-        customerName:
-          type: string
-        customerEmail:
-          type: string
-        customerPhone:
-          type: string
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              documentId:
-                type: integer
-            required:
-              - documentId
-      required:
-        - customerName
-        - customerEmail
-        - customerPhone
-        - items
-
-    UploadPaymentProofBody:
-      type: object
-      properties:
-        customerEmail:
-          type: string
-        paymentMethod:
-          type: string
-        proofImageData:
-          type: string
-        notes:
-          type: ["string", "null"]
-      required:
-        - customerEmail
-        - paymentMethod
-        - proofImageData
-
     AdminOrderDetail:
       type: object
       properties:
@@ -993,12 +897,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrderItem"
-        proofImageData:
-          type: ["string", "null"]
-        proofNotes:
-          type: ["string", "null"]
-        proofUploadedAt:
-          type: ["string", "null"]
       required:
         - id
         - customerName

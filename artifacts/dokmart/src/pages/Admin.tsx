@@ -227,7 +227,6 @@ const SEMESTERS = [
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   pending:          { label: "En attente",      className: "bg-yellow-100 text-yellow-800 border-yellow-200" },
-  payment_uploaded: { label: "Preuve envoyée",  className: "bg-blue-100 text-blue-800 border-blue-200" },
   approved:         { label: "Approuvé",        className: "bg-green-100 text-green-800 border-green-200" },
   rejected:         { label: "Rejeté",          className: "bg-red-100 text-red-800 border-red-200" },
 };
@@ -761,7 +760,7 @@ export default function Admin() {
   const { data: docs } = useListDocuments({ limit: 100 }, { query: { enabled: isAuth, queryKey: getListDocumentsQueryKey({ limit: 100 }) } });
   const { data: categories } = useListCategories({ query: { enabled: isAuth, queryKey: getListCategoriesQueryKey() } });
   const { data: levels } = useListLevels({ query: { enabled: isAuth, queryKey: getListLevelsQueryKey() } });
-  const { data: sellerApps } = useListSellerApplications({}, { query: { enabled: isAuth } });
+  const { data: sellerApps } = useListSellerApplications({}, { query: { enabled: isAuth, queryKey: ["listSellerApplications"] } });
   const reviewSeller = useReviewSellerApplication();
 
   const createDoc = useCreateDocument();
@@ -1058,10 +1057,10 @@ export default function Admin() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StatCard icon={Package} label="Produits" value={stats?.documentCount ?? 0} color="bg-blue-50 text-blue-600" />
-                <StatCard icon={ShoppingBag} label="Commandes" value={stats?.orderCount ?? 0} color="bg-purple-50 text-purple-600" />
-                <StatCard icon={Clock} label="En attente" value={stats?.pendingOrderCount ?? 0} color="bg-amber-50 text-amber-600" />
-                <StatCard icon={CheckCircle} label="Approuvées" value={stats?.approvedOrderCount ?? 0} color="bg-green-50 text-green-600" />
+                <StatCard icon={Package} label="Produits" value={stats?.totalDocuments ?? 0} color="bg-blue-50 text-blue-600" />
+                <StatCard icon={ShoppingBag} label="Commandes" value={stats?.totalOrders ?? 0} color="bg-purple-50 text-purple-600" />
+                <StatCard icon={Clock} label="En attente" value={stats?.pendingPayments ?? 0} color="bg-amber-50 text-amber-600" />
+                <StatCard icon={CheckCircle} label="Approuvées" value={stats?.approvedOrders ?? 0} color="bg-green-50 text-green-600" />
               </div>
             )}
           </div>
@@ -1079,7 +1078,7 @@ export default function Admin() {
               >
                 <option value="">Tous les statuts</option>
                 <option value="pending">En attente</option>
-                <option value="payment_uploaded">Preuve envoyée</option>
+
                 <option value="approved">Approuvées</option>
                 <option value="rejected">Rejetées</option>
               </select>

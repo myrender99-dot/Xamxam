@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRoute, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CheckCircle, Clock, XCircle, AlertCircle, Upload, Download, ArrowLeft, FileText, BookOpen, History, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle, Clock, XCircle, Download, ArrowLeft, FileText, BookOpen, History, Loader2, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
-import { useGetOrder, useUploadPaymentProof, useGetDocumentFiles, getGetOrderQueryKey, getGetDocumentFilesQueryKey } from "@workspace/api-client-react";
+import { useGetOrder, useGetDocumentFiles, getGetOrderQueryKey, getGetDocumentFilesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,36 +57,30 @@ function DocumentFileDownloads({ documentId, orderId, email }: { documentId: num
 }
 
 const STATUS_CONFIG = {
-  pending:          { icon: Clock,        color: "text-yellow-600 bg-yellow-50 border-yellow-200", label: "En attente de paiement" },
-  payment_uploaded: { icon: AlertCircle,  color: "text-blue-600 bg-blue-50 border-blue-200",       label: "Preuve envoyée — En cours de validation" },
-  approved:         { icon: CheckCircle,  color: "text-green-600 bg-green-50 border-green-200",    label: "Paiement validé — Documents disponibles" },
-  rejected:         { icon: XCircle,      color: "text-red-600 bg-red-50 border-red-200",          label: "Paiement rejeté" },
+  pending:  { icon: Clock,       color: "text-yellow-600 bg-yellow-50 border-yellow-200", label: "En attente de paiement" },
+  approved: { icon: CheckCircle, color: "text-green-600 bg-green-50 border-green-200",    label: "Paiement validé — Documents disponibles" },
+  rejected: { icon: XCircle,     color: "text-red-600 bg-red-50 border-red-200",          label: "Paiement rejeté" },
 };
 
 export default function OrderTracking() {
-  const [, params] = useRoute("/order/:id");
-  const searchStr = useSearch();
-  const urlParams = new URLSearchParams(searchStr);
-  const rawId = parseInt(params?.id ?? "0", 10);
-  const urlEmail = urlParams.get("email") ?? "";
-  const paymentStatus = urlParams.get("payment"); // "success" | "cancelled" | null
+  const [, params]   = useRoute("/order/:id");
+  const searchStr    = useSearch();
+  const urlParams    = new URLSearchParams(searchStr);
+  const rawId        = parseInt(params?.id ?? "0", 10);
+  const urlEmail     = urlParams.get("email") ?? "";
+  const paymentStatus = urlParams.get("payment");
 
-  const [email, setEmail] = useState(urlEmail);
+  const [email, setEmail]               = useState(urlEmail);
   const [confirmedEmail, setConfirmedEmail] = useState(urlEmail);
-  const [uploadFile, setUploadFile] = useState<string | null>(null);
-  const [uploadNotes, setUploadNotes] = useState("");
-  const [savedOrders, setSavedOrders] = useState<SavedOrder[]>([]);
-  const [verifying, setVerifying] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [savedOrders, setSavedOrders]   = useState<SavedOrder[]>([]);
+  const [verifying, setVerifying]       = useState(false);
 
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const uploadProof = useUploadPaymentProof();
-  const emailForm = useForm({ resolver: zodResolver(emailSchema), defaultValues: { email } });
+  const { toast }      = useToast();
+  const queryClient    = useQueryClient();
+  const emailForm      = useForm({ resolver: zodResolver(emailSchema), defaultValues: { email } });
 
   useEffect(() => { setSavedOrders(getSavedOrders()); }, []);
 
-  // Auto-fill email from localStorage
   useEffect(() => {
     if (rawId && !confirmedEmail) {
       const saved = getSavedOrders().find((o) => o.id === rawId);
@@ -101,21 +95,20 @@ export default function OrderTracking() {
     { query: { enabled, queryKey: getGetOrderQueryKey(rawId, { email: confirmedEmail }) } }
   );
 
-  // Si retour DiamanoPay avec payment=success, vérifier le statut via l'API
   const verifyPayment = useCallback(async () => {
-    if (!order?.diamanopayChargeId && !rawId) return;
+    if (!rawId) return;
     setVerifying(true);
     try {
-      // Tenter la vérification par chargeId si disponible
-      if ((order as any)?.diamanopayChargeId) {
-        await fetch(`${BASE}/api/payments/verify/${(order as any).diamanopayChargeId}`.replace("//", "/"));
+      const chargeId = (order as any)?.diamanopayChargeId;
+      if (chargeId) {
+        await fetch(`${BASE}/api/payments/verify/${chargeId}`.replace("//", "/"));
       }
       await refetch();
-    } catch {}
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(rawId, { email: confirmedEmail }) });
+    } catch { /* ignore */ }
     setVerifying(false);
-  }, [order, rawId, refetch]);
+  }, [order, rawId, refetch, confirmedEmail, queryClient]);
 
-  // Vérification automatique au retour de DiamanoPay
   useEffect(() => {
     if (paymentStatus === "success" && order && order.status !== "approved") {
       verifyPayment();
@@ -125,30 +118,6 @@ export default function OrderTracking() {
   const formatPrice = (p: number) => p.toLocaleString("fr-FR") + " FCFA";
   const formatDate  = (d: string) => new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setUploadFile(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleUpload = () => {
-    if (!uploadFile || !order) return;
-    uploadProof.mutate(
-      { id: rawId, data: { customerEmail: confirmedEmail, paymentMethod: "diamanopay", proofImageData: uploadFile, notes: uploadNotes || null } },
-      {
-        onSuccess: () => {
-          toast({ title: "Preuve envoyée !", description: "Nous allons vérifier votre paiement sous peu." });
-          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(rawId, { email: confirmedEmail }) });
-          setUploadFile(null);
-        },
-        onError: () => { toast({ title: "Erreur lors de l'envoi", variant: "destructive" }); },
-      }
-    );
-  };
-
-  // Pas d'ID — formulaire de recherche
   if (!rawId || rawId === 0) {
     return (
       <div className="min-h-screen bg-muted/30 px-4 py-10">
@@ -259,7 +228,6 @@ export default function OrderTracking() {
   const statusKey = order.status as keyof typeof STATUS_CONFIG;
   const statusCfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.pending;
   const StatusIcon = statusCfg.icon;
-  const isDiamano = order.paymentMethod === "diamanopay";
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -273,7 +241,7 @@ export default function OrderTracking() {
           <span className="text-sm text-muted-foreground">{formatDate(order.createdAt)}</span>
         </div>
 
-        {/* Bannière retour de paiement */}
+        {/* Bannière retour DiamanoPay */}
         {paymentStatus === "success" && order.status !== "approved" && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-2 text-sm text-blue-700">
@@ -291,7 +259,7 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {/* Status */}
+        {/* Statut */}
         <div className={`border rounded-xl p-4 flex items-center gap-3 mb-6 ${statusCfg.color}`}>
           <StatusIcon className="w-6 h-6 flex-shrink-0" />
           <div className="flex-1">
@@ -330,58 +298,15 @@ export default function OrderTracking() {
           </div>
         </div>
 
-        {/* Paiement en attente — DiamanoPay */}
-        {isDiamano && order.status === "pending" && (order as any).diamanopayCheckoutUrl && (
-          <div className="bg-card border border-card-border rounded-xl p-5 mb-5 text-center space-y-3">
+        {/* Bouton finaliser paiement si pending et URL disponible */}
+        {order.status === "pending" && (order as any).diamanopayCheckoutUrl && (
+          <div className="bg-card border border-card-border rounded-xl p-5 text-center space-y-3">
             <p className="text-sm text-muted-foreground">Votre paiement n'a pas encore été finalisé.</p>
             <a href={(order as any).diamanopayCheckoutUrl}>
               <Button className="gap-2">
                 💳 Finaliser le paiement ({formatPrice(order.totalAmount)})
               </Button>
             </a>
-          </div>
-        )}
-
-        {/* Upload preuve (fallback pour commandes non-DiamanoPay) */}
-        {!isDiamano && (order.status === "pending" || order.status === "payment_uploaded") && (
-          <div className="bg-card border border-card-border rounded-xl p-5">
-            <h2 className="font-bold mb-2">
-              {order.status === "payment_uploaded" ? "Modifier la preuve de paiement" : "Envoyer la preuve de paiement"}
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Uploadez la capture d'écran de votre paiement pour validation.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Capture d'écran du paiement</label>
-                <div
-                  className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 transition-colors"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  {uploadFile ? (
-                    <div>
-                      <img src={uploadFile} alt="preuve" className="max-h-48 mx-auto rounded-lg object-contain" />
-                      <p className="text-xs text-muted-foreground mt-2">Cliquez pour changer</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                      <p className="text-sm text-muted-foreground">Cliquez pour sélectionner une image</p>
-                      <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG acceptés</p>
-                    </div>
-                  )}
-                </div>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Note (optionnel)</label>
-                <Input placeholder="Ex: Paiement envoyé à 14h30" value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} />
-              </div>
-              <Button className="w-full gap-2" disabled={!uploadFile || uploadProof.isPending} onClick={handleUpload}>
-                <Upload className="w-4 h-4" />
-                {uploadProof.isPending ? "Envoi en cours..." : "Envoyer la preuve"}
-              </Button>
-            </div>
           </div>
         )}
       </div>
